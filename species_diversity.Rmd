@@ -1,0 +1,203 @@
+---
+title: "Species Diversity Metrics in R"
+author: "Course Team"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+## Overview
+
+This R Markdown outlines common ways to quantify species diversity using abundance data (e.g., counts per plot). It demonstrates how to calculate key metrics and interpret them in the context of plant diversity analysis.
+
+**What do we mean by diversity?**
+
+- **Alpha diversity** – diversity within a single site/plot.
+- **Beta diversity** – turnover among sites (dissimilarity).
+- **Gamma diversity** – diversity across all sites in the study region.
+
+The examples below focus on alpha diversity per plot and beta diversity among plots.
+
+## Setup
+
+```{r setup, message=FALSE}
+# Install packages if needed (uncomment the following lines)
+# install.packages(c("vegan", "dplyr", "tidyr"))
+
+library(dplyr)
+library(tidyr)
+library(vegan)
+library(ggplot2)
+library(readr)
+```
+
+## Example data
+
+The example uses a small community matrix with species columns and plot rows. Replace this table with your own counts or relative abundances.
+
+```{r example-data}
+example_counts <- tibble::tribble(
+  ~plot_id, ~oak, ~pine, ~spruce, ~birch, ~maple,
+  "P1",     10,    3,      0,      4,      2,
+  "P2",      2,    5,      1,      6,      5,
+  "P3",      0,    0,      8,      1,      0,
+  "P4",      7,    2,      2,      0,      3
+)
+
+example_counts
+```
+
+To work with your own data, you can import a CSV that has one row per plot and one column per species (plus a plot identifier):
+
+```{r import-own-data, eval=FALSE}
+# my_counts <- read_csv("path/to/your_abundance_table.csv")
+# head(my_counts)
+```
+
+Ensure that species columns contain non-negative numeric values and that missing values are handled (e.g., replace `NA` with 0 if appropriate).
+
+Before calculating diversity, extract the community matrix (species-only columns) and set plot IDs as row names.
+
+```{r community-matrix}
+comm_matrix <- example_counts %>%
+  column_to_rownames("plot_id")
+
+comm_matrix
+```
+
+If you want to standardize by sample effort, convert to relative abundances (each row sums to 1):
+
+```{r relative-abundance}
+rel_abund <- decostand(comm_matrix, method = "total")
+
+rowSums(rel_abund)  # should all be 1
+```
+
+## Species richness (S)
+
+Species richness counts how many species occur in each plot.
+
+```{r richness}
+richness <- specnumber(comm_matrix)
+richness
+```
+
+## Shannon diversity (H')
+
+Shannon (information) diversity increases with both richness and evenness. Higher values indicate communities with many species and balanced abundances.
+
+```{r shannon}
+shannon <- diversity(comm_matrix, index = "shannon")
+shannon
+```
+
+## Simpson diversity (1 - D)
+
+Simpson diversity emphasizes dominant species. Values closer to 1 imply higher diversity and lower dominance.
+
+```{r simpson}
+simpson <- diversity(comm_matrix, index = "simpson")
+simpson
+```
+
+## Evenness (Pielou J)
+
+Pielou's evenness standardizes Shannon diversity by maximum possible diversity for the observed richness.
+
+```{r evenness}
+evenness <- shannon / log(richness)
+evenness
+```
+
+## Hill numbers (q = 0, 1, 2)
+
+Hill numbers express diversity as the "effective number of species" and unify richness, Shannon, and Simpson metrics.
+
+- q = 0: species richness
+- q = 1: exponential of Shannon
+- q = 2: inverse Simpson
+
+```{r hill}
+hill_q1 <- exp(shannon)        # effective species considering common species
+hill_q2 <- 1 / (1 - simpson)   # effective species weighted to dominant species
+
+hill_numbers <- tibble(
+  plot_id = names(richness),
+  q0_richness = richness,
+  q1_exp_shannon = hill_q1,
+  q2_inv_simpson = hill_q2
+)
+
+hill_numbers
+```
+
+## Summary table for each plot
+
+Collect the metrics above into a single table you can export or join back to spatial data.
+
+```{r summary-table}
+diversity_table <- tibble(
+  plot_id = names(richness),
+  richness = richness,
+  shannon = shannon,
+  simpson = simpson,
+  evenness = evenness,
+  hill_q1 = hill_q1,
+  hill_q2 = hill_q2
+)
+
+diversity_table
+
+# write_csv(diversity_table, "diversity_metrics_per_plot.csv")
+```
+
+## Beta diversity (dissimilarity)
+
+You can compare plots using Bray–Curtis dissimilarity to summarize turnover among sites.
+
+```{r bray-curtis}
+bray <- vegdist(comm_matrix, method = "bray")
+bray
+```
+
+Values range from 0 (identical composition) to 1 (no shared species). You can convert the distances to a matrix for easier reading:
+
+```{r bray-matrix}
+as.matrix(bray)
+```
+
+## Visualizing diversity
+
+Plotting richness alongside Shannon and Simpson diversity helps interpret patterns across sites.
+
+```{r plot, fig.width=7, fig.height=4}
+plot_df <- tibble(
+  plot_id = names(richness),
+  richness = richness,
+  shannon = shannon,
+  simpson = simpson
+) %>%
+  pivot_longer(-plot_id, names_to = "metric", values_to = "value")
+
+ggplot(plot_df, aes(plot_id, value, fill = metric)) +
+  geom_col(position = position_dodge()) +
+  labs(
+    title = "Plant diversity metrics by plot",
+    x = "Plot",
+    y = "Metric value",
+    fill = "Metric"
+  ) +
+  theme_minimal()
+```
+
+## How to use this template
+
+1. Replace `example_counts` with your own data (or import with `read_csv`).
+2. Re-run the code chunks to compute metrics for your plots.
+3. Interpret the results:
+   - Higher Shannon/Simpson values → more diverse, less dominance.
+   - Evenness close to 1 → species are evenly abundant.
+   - Hill numbers provide intuitive "effective species" counts.
+   - Lower Bray–Curtis between plots → communities are more similar.
+4. Export the `diversity_table` (CSV) and the knitted HTML as learning artifacts or use them as inputs to mapping/modeling workflows.
