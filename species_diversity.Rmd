@@ -22,8 +22,8 @@ The examples below focus on alpha diversity per plot and beta diversity among pl
 ## Setup
 
 ```{r setup, message=FALSE}
-# Install packages if needed (uncomment the following lines)
-# install.packages(c("vegan", "dplyr", "tidyr"))
+# Install packages once before knitting (run this line in the R console)
+# install.packages(c("vegan", "dplyr", "tidyr", "tibble", "ggplot2", "readr", "rmarkdown"))
 
 library(dplyr)
 library(tidyr)
@@ -55,18 +55,18 @@ To work with your own data, you can import a CSV that has one row per plot and o
 # head(my_counts)
 ```
 
-Ensure that species columns contain non-negative numeric values and that missing values are handled (e.g., replace `NA` with 0 if appropriate).
+Ensure that species columns contain finite, non-negative numeric values and that missing values are handled (e.g., replace `NA` with 0 if appropriate). Use unique, non-missing plot IDs, keep only the plot identifier and species columns, and exclude empty plots (row totals of 0) before applying this worksheet.
 
 Before calculating diversity, extract the community matrix (species-only columns) and set plot IDs as row names.
 
 ```{r community-matrix}
 comm_matrix <- example_counts %>%
-  column_to_rownames("plot_id")
+  tibble::column_to_rownames("plot_id")
 
 comm_matrix
 ```
 
-If you want to standardize by sample effort, convert to relative abundances (each row sums to 1):
+The next chunk computes `rel_abund` for display only (each row sums to 1); all diversity calculations below use `comm_matrix`. Shannon and Simpson use proportions internally. Row normalization alone does not correct for unequal sampling effort.
 
 ```{r relative-abundance}
 rel_abund <- decostand(comm_matrix, method = "total")
@@ -103,7 +103,7 @@ simpson
 
 ## Evenness (Pielou J)
 
-Pielou's evenness standardizes Shannon diversity by maximum possible diversity for the observed richness.
+Pielou's evenness standardizes Shannon diversity by maximum possible diversity for the observed richness. It is undefined for plots with fewer than two species.
 
 ```{r evenness}
 evenness <- shannon / log(richness)
@@ -161,7 +161,7 @@ bray <- vegdist(comm_matrix, method = "bray")
 bray
 ```
 
-Values range from 0 (identical composition) to 1 (no shared species). You can convert the distances to a matrix for easier reading:
+Values range from 0 (identical species abundances) to 1 (no shared species). These distances use `comm_matrix`, so differences in total abundance can affect dissimilarity. You can convert the distances to a matrix for easier reading:
 
 ```{r bray-matrix}
 as.matrix(bray)
